@@ -331,8 +331,8 @@ namespace Microsoft.CodeAnalysis
         /// <paramref name="child"/> is not one of them.
         /// </summary>
         /// <remarks>
-        /// Uses the position of <paramref name="child"/> to go straight to the slot (and list element) that holds it,
-        /// so the cost does not grow with the number of children that come before it.
+        /// Walks the parent's slots by position without materializing earlier slots, and uses position-based lookup
+        /// within syntax lists to find the target element.
         /// </remarks>
         internal static int IndexOf(SyntaxNode parent, SyntaxNode child)
         {
@@ -367,7 +367,7 @@ namespace Microsoft.CodeAnalysis
                     }
                     else if (greenChild.SlotCount > 0 && parent.GetNodeSlot(slot) is { } redList)
                     {
-                        var indexInList = IndexOfInList(greenChild, redList, targetPosition - position, child);
+                        var indexInList = indexOfInList(greenChild, redList, targetPosition - position, child);
                         if (indexInList >= 0)
                         {
                             return index + indexInList;
@@ -380,31 +380,31 @@ namespace Microsoft.CodeAnalysis
             }
 
             return -1;
-        }
 
-        private static int IndexOfInList(GreenNode greenList, SyntaxNode redList, int offset, SyntaxNode child)
-        {
-            // Start with the element that contains the offset (or the last one, when the child is a zero-width element
-            // at the end of the list). Zero-width elements just before it start at the same offset, so look at those too.
-            var elementIndex = offset < greenList.FullWidth
-                ? greenList.FindSlotIndexContainingOffset(offset)
-                : greenList.SlotCount - 1;
-
-            for (; elementIndex >= 0; elementIndex--)
+            static int indexOfInList(GreenNode greenList, SyntaxNode redList, int offset, SyntaxNode child)
             {
-                var greenElement = greenList.GetSlot(elementIndex);
-                if (greenElement == child.Green && redList.GetNodeSlot(elementIndex) == child)
+                // Start with the element that contains the offset (or the last one, when the child is a zero-width element
+                // at the end of the list). Zero-width elements just before it start at the same offset, so look at those too.
+                var elementIndex = offset < greenList.FullWidth
+                    ? greenList.FindSlotIndexContainingOffset(offset)
+                    : greenList.SlotCount - 1;
+
+                for (; elementIndex >= 0; elementIndex--)
                 {
-                    return elementIndex;
+                    var greenElement = greenList.GetSlot(elementIndex);
+                    if (greenElement == child.Green && redList.GetNodeSlot(elementIndex) == child)
+                    {
+                        return elementIndex;
+                    }
+
+                    if (elementIndex == 0 || greenList.GetSlot(elementIndex - 1)?.FullWidth != 0)
+                    {
+                        break;
+                    }
                 }
 
-                if (elementIndex == 0 || greenList.GetSlot(elementIndex - 1)?.FullWidth != 0)
-                {
-                    break;
-                }
+                return -1;
             }
-
-            return -1;
         }
 
         /// <summary>
